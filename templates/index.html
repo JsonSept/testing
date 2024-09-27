@@ -1,36 +1,220 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="static/styles.css">  <!-- Link to your CSS -->
-    <title>QR Code App</title>
+    <title>QR Code Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #F7F7F7;
+        }
+
+        #scanner-container {
+            width: 100%;
+            max-width: 400px;
+            margin: auto;
+            text-align: center;
+            position: relative;
+            margin-top: 20px;
+        }
+        #qr-video {
+    width: 100%;
+    max-width: 400px;
+    border-radius: 10px;
+    border: 1px solid #ccc;
+}
+
+#scan-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#scan-box {
+    width: 200px;
+    height: 200px;
+    border: 2px solid transparent;
+    position: relative;
+}
+
+#scan-box:before, #scan-box:after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border: 2px solid white;
+    box-sizing: border-box;
+    z-index: 1;
+}
+
+#scan-box:before {
+    top: -5px;
+    left: -5px;
+    border-top-width: 4px;
+    border-left-width: 4px;
+}
+
+#scan-box:after {
+    bottom: -5px;
+    right: -5px;
+    border-bottom-width: 4px;
+    border-right-width: 4px;
+}
+        video {
+            width: 100%;
+            border: 2px solid #000;
+            border-radius: 10px;
+        }
+
+        #result {
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: green;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 10px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45A049;
+        }
+    </style>
 </head>
+
 <body>
-    <h1>Welcome to QR Code App</h1>
-    <form id="qrForm">
-        <input type="text" name="first_name" placeholder="First Name" required>
-        <input type="text" name="last_name" placeholder="Last Name" required>
-        <input type="text" name="department" placeholder="Department">
-        <button type="submit">Store QR Data</button>
-    </form>
+    <div id="qr-scanner-app">
+        <h1>QR Code Scanner</h1>
+        <p>Scan a QR code to see the result here.</p>
+        <button id="toggle-scan-btn" onclick="toggleScanning()">Start Scanning</button>
+        
+        <div id="scanner-container" style="display: none;">
+            <video id="qr-video" autoplay></video>
+            <div id="scan-overlay">
+                <div id="scan-box"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script>
-        document.getElementById('qrForm').addEventListener('submit', async function(event) {
-            event.preventDefault();
-            const formData = new FormData(this);
-            const data = Object.fromEntries(formData.entries());
 
-            const response = await fetch('/store_qr_data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            });
+let isScanning = false;
+let videoElement = document.getElementById('qr-video');
+let scannerContainer = document.getElementById('scanner-container');
+let toggleButton = document.getElementById('toggle-scan-btn');
 
-            const result = await response.json();
-            alert(result.message);
+// Function to start the camera and QR scanning
+function startScanning() {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(function(stream) {
+            videoElement.srcObject = stream;
+            videoElement.play();
+        })
+        .catch(function(err) {
+            console.log("Error accessing the camera: " + err);
+        });
+}
+
+// Function to stop the camera
+function stopScanning() {
+    let stream = videoElement.srcObject;
+    let tracks = stream.getTracks();
+
+    tracks.forEach(function(track) {
+        track.stop();
+    });
+
+    videoElement.srcObject = null;
+}
+
+// Toggle scanning when button is clicked
+function toggleScanning() {
+    if (isScanning) {
+        stopScanning();
+        scannerContainer.style.display = "none";
+        toggleButton.textContent = "Start Scanning";
+    } else {
+        startScanning();
+        scannerContainer.style.display = "block";
+        toggleButton.textContent = "Stop Scanning";
+    }
+    isScanning = !isScanning;
+}
+
+
+        document.getElementById('start-button').addEventListener('click', () => {
+            const video = document.getElementById('qr-video');
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    video.srcObject = stream;
+
+                    const scanner = new BarcodeDetector({ formats: ['qr_code'] });
+                    video.addEventListener('loadedmetadata', () => {
+                        function scanFrame() {
+                            scanner.detect(video)
+                                .then(qrCodes => {
+                                    qrCodes.forEach(qrCode => {
+                                        const decodedText = qrCode.rawValue;
+                                        const splitData = decodedText.split(' ');
+
+                                        if (splitData.length >= 3) {
+                                            const firstName = splitData[0];
+                                            const lastName = splitData[1];
+                                            const department = splitData.slice(2).join(' ');
+
+                                            axios.get(`/qrcode?first_name=${firstName}&last_name=${lastName}`)
+                                                .then(response => {
+                                                    if (response.data.exists) {
+                                                        return axios.delete(`/kill?first_name=${firstName}&last_name=${lastName}`);
+                                                    } else {
+                                                        return axios.post('/store_qr_data', {
+                                                            first_name: firstName,
+                                                            last_name: lastName,
+                                                            department: department
+                                                        });
+                                                    }
+                                                })
+                                                .then(response => {
+                                                    document.getElementById('result').innerHTML = response.data.message;
+                                                })
+                                                .catch(error => {
+                                                    document.getElementById('result').innerHTML = error.message;
+                                                });
+                                        }
+                                    });
+                                })
+                                .catch(() => console.log("No QR code detected"));
+
+                            requestAnimationFrame(scanFrame);
+                        }
+
+                        scanFrame();
+                    });
+                });
         });
     </script>
 </body>
+
 </html>
