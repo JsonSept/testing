@@ -12,10 +12,11 @@ CORS(app)
 # MySQL database connection
 def get_db_connection():
     return mysql.connector.connect(
-        host=os.getenv('host'),
-        user=os.getenv('user'),
-        password=os.getenv('password'),
-        database=os.getenv('database')
+        host=os.getenv('HOST'),
+        user=os.getenv('USER'),
+        password=os.getenv('PASSWORD'),
+        database=os.getenv('DATABASE'),
+        port=os.getenv('PORT')
     )
 
 @app.route('/')
@@ -30,19 +31,37 @@ def store_qr_data():
 
     try:
         connection = get_db_connection()
-        cursor = connection.cursor()
+        cursor = connection.cursor(dictionary=True)
         cursor.execute(
             "INSERT INTO users (first_name, last_name, department) VALUES (%s, %s, %s)",
             (data['first_name'], data['last_name'], data['department'])
         )
         connection.commit()
         return jsonify({"message": "QR data stored successfully", "id": cursor.lastrowid}), 200
-    except Exception as error:
-        print("Error storing QR data:", error)
+    except mysql.connector.Error as error:
+        print(f"Error storing QR data:", error)
         return jsonify({"message": f"Error storing QR data: {str(error)}"}), 500
     finally:
-        cursor.close()
-        connection.close()
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+@app.route('/test_db', methods=['GET'])
+def test_db():
+    try:
+        connection = get_db_connection()  # Establish a new connection
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")  # Simple query to test the connection
+        result = cursor.fetchone()
+        return jsonify({'message': "Database connection successful", 'result': result}), 200
+    except mysql.connector.Error as err:
+        return jsonify({'message': f"Error connecting to database: {err}"}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
 
 @app.route('/kill', methods=['DELETE'])
 def delete_user():
@@ -62,12 +81,14 @@ def delete_user():
             return jsonify({"message": "User not found"}), 404
 
         return jsonify({"message": "User deleted successfully"}), 200
-    except Exception as error:
+    except mysql.connector.Error as error:
         print("Error deleting user:", error)
         return jsonify({"message": f"Error deleting user: {str(error)}"}), 500
     finally:
-        cursor.close()
-        connection.close()
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
 
 @app.route('/qrcode', methods=['GET'])
 def check_user_existence():
@@ -83,12 +104,14 @@ def check_user_existence():
         cursor.execute('SELECT COUNT(*) FROM users WHERE first_name = %s AND last_name = %s', (first_name, last_name))
         count = cursor.fetchone()[0]
         return jsonify({"exists": count > 0}), 200
-    except Exception as error:
+    except mysql.connector.Error as error:
         print("Error checking user existence:", error)
         return jsonify({"message": f"Error checking user existence: {str(error)}"}), 500
     finally:
-        cursor.close()
-        connection.close()
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
 
 if __name__ == '__main__':
-    app.run(port=int(os.getenv('PORT', 9900)))
+    app.run(port=int(os.getenv('PORT',9900)), debug=False)
